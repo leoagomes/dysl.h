@@ -316,8 +316,7 @@ static inline void* dAlloc_realloc(
     size_t new_size
 );
 
-/* == utils == */
-
+#pragma region Utility functions and macros
 #define dU_min(a, b) ((a) < (b) ? (a) : (b))
 #define dU_max(a, b) ((a) > (b) ? (a) : (b))
 
@@ -365,8 +364,9 @@ static inline int dSlice_equals(
     }
     return 1;
 }
+#pragma endregion /* Utility functions and macros */
 
-/* == Allocator API == */
+#pragma region Allocator API implementation
 static inline void* dAlloc_alloc(struct dysl_allocator* allocator, size_t size) {
     return allocator->fn(allocator->user_data, NULL, 0, size);
 }
@@ -381,8 +381,9 @@ static inline void* dAlloc_realloc(
 ) {
     return allocator->fn(allocator->user_data, ptr, old_size, new_size);
 }
+#pragma endregion /* Allocator API implementation */
 
-/* == Object linked list API == */
+#pragma region Object linked list API implementation
 static inline void dObj_close(struct dy_object* obj) {
     obj->previous = obj->next = obj;
 }
@@ -399,9 +400,9 @@ static inline void dObj_link(struct dy_object* obj, struct dy_object* list) {
     list->next->previous = obj;
     list->next = obj;
 }
+#pragma endregion /* Object linked list API implementation */
 
-/* == Symbol table API == */
-
+#pragma region Symbol table API implementation
 void dSymbols_init(
     struct dy_symbols* symbols,
     size_t initial_capacity,
@@ -536,8 +537,9 @@ int dSymbols_should_grow(struct dy_symbols* symbols, size_t desired_count) {
     size_t grow_threshold = (size_t)(symbols->capacity * DYSL_SYMBOLS_LOAD_FACTOR);
     return desired_count > grow_threshold;
 }
+#pragma endregion /* Symbol table API implementation */
 
-/* == Garbage collector API == */
+#pragma region Garbage Collector API implementation
 void dGC_init(struct dy_gc* gc, struct dysl_allocator allocator) {
     gc->allocator = allocator;
     dObj_close(&gc->root);
@@ -566,14 +568,16 @@ struct dy_object* dGC_create(struct dy_gc* gc, size_t size, dy_tag tag) {
     dGC_track(gc, obj);
     return obj;
 }
+#pragma endregion /* Garbage Collector API implementation */
 
-/* == Global state API == */
+#pragma region Global context API implementation
 void dGlobal_init(struct dy_global* global, struct dysl_allocator allocator) {
     dGC_init(&global->gc, allocator);
     dSymbols_init(&global->symbols, DYSL_SYMBOLS_INITIAL_CAPACITY, &allocator);
 }
+#pragma endregion /* Global context API implementation */
 
-/* == Dysl API == */
+#pragma region Public Dysl API implementation
 struct dysl* dysl_new(struct dysl_allocator allocator) {
     struct dysl* D = (struct dysl*)dAlloc_alloc(&allocator, sizeof(*D));
     if (D == NULL)
@@ -593,6 +597,7 @@ void dysl_destroy(struct dysl* state) {
     dAlloc_free(allocator, state->global);
     dAlloc_free(allocator, state);
 }
+#pragma endregion /* Public Dysl API implementation */
 
 /* == Standard allocator implementation == */
 #if DYSL_STDLIB
