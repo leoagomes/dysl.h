@@ -56,10 +56,10 @@
 #if __has_include(DYSL_CONFIG_FILE)
 #include DYSL_CONFIG_FILE
 #else /* __has_include(DYSL_CONFIG_FILE) */
-#warning "Dysl configuration file not found, using default configuration"
+#warning "[dysl] configuration file not found, using defaults"
 #endif /* __has_include(DYSL_CONFIG_FILE) */
 #else /* __has_include */
-#warning "__has_include not supported, cannot check for Dysl configuration file, using default configuration"
+#warning "[dysl] cannot check for configuration file, using defaults"
 #endif /* __has_include */
 
 /* == Default configuration == */
@@ -84,6 +84,7 @@
 extern "C" {
 #endif /* __cplusplus */
 /* == Allocator API == */
+
 /** The allocator function type.
  *
  * Similar to Lua's allocator, and the C realloc function, this function
@@ -111,7 +112,10 @@ extern "C" {
  * @param new_size  The new size of the memory block, or 0 if the block is being
  *                  freed.
  */
-typedef void*(*dysl_allocator_fn)(void* ud, void* ptr, size_t old_size, size_t new_size);
+typedef void*(*dysl_allocator_fn)(
+    void* ud, void* ptr,
+    size_t old_size, size_t new_size
+);
 
 /** The structure that holds the allocator function and its user data. */
 struct dysl_allocator {
@@ -136,6 +140,7 @@ struct dysl_allocator dysl_standard_allocator();
 #endif /* DYSL_STDLIB */
 
 /* == Dysl API == */
+
 /** The interpreter context. */
 struct dysl;
 
@@ -217,26 +222,61 @@ struct dy_gc {
 };
 #define dGC_allocator(gc) (&((gc)->allocator))
 void dGC_init(struct dy_gc* gc, struct dysl_allocator allocator);
+static inline void dGC_track(struct dy_gc* gc, struct dy_object* obj);
+static inline void dGC_root(struct dy_gc* gc, struct dy_object* obj);
+static inline void dGC_unroot(struct dy_gc* gc, struct dy_object* obj);
+struct dy_object* dGC_create(struct dy_gc* gc, size_t size, dy_tag tag);
 
 // symbol table
 #define DYSL_SYMBOLS_INITIAL_CAPACITY 64
+#define DYSL_SYMBOLS_LOAD_FACTOR 0.75
 struct dy_symbols {
     struct dy_symbol** buckets;
     size_t count, capacity;
 };
+/** Initializes the symbol table. */
 void dSymbols_init(struct dy_symbols* symbols, size_t initial_capacity, struct dysl_allocator* allocator);
+/** Destroys the symbol table structure, not the symbols themselves. */
 void dSymbols_destroy(struct dy_symbols* symbols, struct dysl_allocator* allocator);
-struct dy_symbol* dSymbols_find(
+/** Looks up a symbol in the table, returns its slot. */
+struct dy_symbol** dSymbols_lookup(
     struct dy_symbols* symbols,
     const char* name,
     size_t length,
-    dy_hash_t hash
+    dy_hash_t hash,
+    int* found
 );
-struct dy_symbol** dSymbols_put(
+/** Returns the slot for the interned symbol with the given name, growing the
+ * table if necessary.
+ *
+ * After this call, the table will have counted the new symbol.
+ *
+ * The caller is responsible for allocating the symbol and placing it in the
+ * returned slot.
+ */
+struct dy_symbol** dSymbols_intern(
     struct dy_symbols* symbols,
-    struct dy_symbol* symbol,
+    const char* name,
+    size_t length,
+    dy_hash_t hash,
     struct dysl_allocator* allocator
 );
+/** Grows or shrinks the symbol table to a reasonable size that accommodates the
+ * desired count of symbols. */
+void dSymbols_ensure_capacity(
+    struct dy_symbols* symbols,
+    size_t desired_count,
+    struct dysl_allocator* allocator
+);
+/** Resizes the symbol table to the new capacity. */
+void dSymbols_resize(
+    struct dy_symbols* symbols,
+    size_t new_capacity,
+    struct dysl_allocator* allocator
+);
+/** Returns whether the symbol table should grow to accommodate the desired
+ * count of symbols. */
+int dSymbols_should_grow(struct dy_symbols* symbols, size_t desired_count);
 
 // global state
 struct dy_global {
@@ -270,17 +310,26 @@ static inline void* dAlloc_realloc(
 );
 
 /* == utils == */
+
+#define dU_min(a, b) ((a) < (b) ? (a) : (b))
+#define dU_max(a, b) ((a) > (b) ? (a) : (b))
+
+/** Clears a chunk of memory (sets to zero) */
 static inline void dMem_clear(void* ptr, size_t size) {
     uint8_t* p = (uint8_t*)ptr;
     for (size_t i = 0; i < size; i++)
         p[i] = 0;
 }
+
+/** Copies a chunk of memory (from src to dest) */
 static inline void dMem_copy(void* dest, const void* src, size_t size) {
     uint8_t* d = (uint8_t*)dest;
     const uint8_t* s = (const uint8_t*)src;
     for (size_t i = 0; i < size; i++)
         d[i] = s[i];
 }
+
+/** FNV-1a hash function implementation */
 static inline dy_hash_t dHash_fnv1a(const void* key, size_t length) {
     const uint8_t* data = (const uint8_t*)key;
     dy_hash_t hash = 2166136261u;
@@ -289,6 +338,24 @@ static inline dy_hash_t dHash_fnv1a(const void* key, size_t length) {
         hash *= 16777619u;
     }
     return hash;
+}
+
+/** Compares two memory slices for equality */
+static inline int dSlice_equals(
+    const void* a,
+    size_t a_length,
+    const void* b,
+    size_t b_length
+) {
+    if (a_length != b_length)
+        return 0;
+    const uint8_t* pa = (const uint8_t*)a;
+    const uint8_t* pb = (const uint8_t*)b;
+    for (size_t i = 0; i < a_length; i++) {
+        if (pa[i] != pb[i])
+            return 0;
+    }
+    return 1;
 }
 
 /* == Allocator API == */
@@ -311,11 +378,13 @@ static inline void* dAlloc_realloc(
 static inline void dObj_close(struct dy_object* obj) {
     obj->previous = obj->next = obj;
 }
+
 static inline void dObj_unlink(struct dy_object* obj) {
     obj->previous->next = obj->next;
     obj->next->previous = obj->previous;
     dObj_close(obj);
 }
+
 static inline void dObj_link(struct dy_object* obj, struct dy_object* list) {
     obj->next = list->next;
     obj->previous = list;
@@ -324,6 +393,7 @@ static inline void dObj_link(struct dy_object* obj, struct dy_object* list) {
 }
 
 /* == Symbol table API == */
+
 void dSymbols_init(
     struct dy_symbols* symbols,
     size_t initial_capacity,
@@ -338,11 +408,124 @@ void dSymbols_init(
     for (size_t i = 0; i < initial_capacity; i++)
         symbols->buckets[i] = NULL;
 }
+
 void dSymbols_destroy(struct dy_symbols* symbols, struct dysl_allocator* allocator) {
+    // destroys only the symbol table structure,
+    // the symbols themselves should be GC'd
     dAlloc_free(allocator, symbols->buckets);
     symbols->buckets = NULL;
     symbols->count = 0;
     symbols->capacity = 0;
+}
+
+struct dy_symbol** dSymbols_lookup(
+    struct dy_symbols* symbols,
+    const char* name,
+    size_t length,
+    dy_hash_t hash,
+    int* found
+) {
+    size_t index = hash % symbols->capacity;
+    struct dy_symbol** slot = &(symbols->buckets[index]);
+    *found = 0;
+    while (*slot != NULL) {
+        struct dy_symbol* sym = *slot;
+        if (sym->hash == hash &&
+            sym->length == length &&
+            dSlice_equals(sym->name, sym->length, name, length)) {
+            *found = 1;
+            break;
+        }
+        slot = &sym->next_in_table;
+    }
+    return slot;
+}
+
+struct dy_symbol** dSymbols_intern(
+    struct dy_symbols* symbols,
+    const char* name,
+    size_t length,
+    dy_hash_t hash,
+    struct dysl_allocator* allocator
+) {
+    int found = 0;
+    struct dy_symbol** slot;
+    // first lookup
+    slot = dSymbols_lookup(symbols, name, length, hash, &found);
+    if (found) return slot;
+    // not found, create new symbol
+    size_t new_count = symbols->count + 1;
+    if (dSymbols_should_grow(symbols, new_count)) {
+        dSymbols_ensure_capacity(symbols, new_count, allocator);
+        // re-lookup after resize
+        slot = dSymbols_lookup(symbols, name, length, hash, &found);
+    }
+    symbols->count = new_count;
+    // caller allocates the symbol and places it in *slot
+    return slot;
+}
+
+void dSymbols_resize(
+    struct dy_symbols* symbols,
+    size_t new_capacity,
+    struct dysl_allocator* allocator
+) {
+    struct dy_symbol** new_buckets = (struct dy_symbol**)dAlloc_alloc(
+        allocator,
+        sizeof(struct dy_symbol*) * new_capacity
+    );
+    if (new_buckets == NULL)
+        // Allocation failed, overflow the symbol table until next resize.
+        // This keeps things functional at the cost of performance.
+        return;
+    for (size_t i = 0; i < new_capacity; i++)
+        new_buckets[i] = NULL;
+    // rehash existing symbols
+    for (size_t i = 0; i < symbols->capacity; i++) {
+        struct dy_symbol* sym = symbols->buckets[i];
+        while (sym != NULL) {
+            struct dy_symbol* next_sym = sym->next_in_table;
+            size_t new_index = sym->hash % new_capacity;
+            sym->next_in_table = new_buckets[new_index];
+            new_buckets[new_index] = sym;
+            sym = next_sym;
+        }
+    }
+    // free old buckets
+    dAlloc_free(allocator, symbols->buckets);
+    symbols->buckets = new_buckets;
+    symbols->capacity = new_capacity;
+}
+
+void dSymbols_ensure_capacity(
+    struct dy_symbols* symbols,
+    size_t desired_count,
+    struct dysl_allocator* allocator
+) {
+    size_t capacity = symbols->capacity;
+    size_t grow_threshold = (size_t)(capacity * DYSL_SYMBOLS_LOAD_FACTOR);
+    size_t shrink_threshold = capacity / 4;
+    size_t new_capacity = symbols->capacity;
+    if (desired_count > grow_threshold) {
+        // need to grow
+        while (new_capacity * DYSL_SYMBOLS_LOAD_FACTOR < desired_count) {
+            new_capacity *= 2;
+        }
+    } else if (desired_count < shrink_threshold && capacity > DYSL_SYMBOLS_INITIAL_CAPACITY) {
+        // need to shrink
+        new_capacity = capacity / 2;
+        new_capacity = dU_max(new_capacity, DYSL_SYMBOLS_INITIAL_CAPACITY);
+        while (new_capacity > DYSL_SYMBOLS_INITIAL_CAPACITY &&
+               desired_count < (size_t)(new_capacity / 4)) {
+            new_capacity /= 2;
+        }
+    }
+    dSymbols_resize(symbols, new_capacity, allocator);
+}
+
+int dSymbols_should_grow(struct dy_symbols* symbols, size_t desired_count) {
+    size_t grow_threshold = (size_t)(symbols->capacity * DYSL_SYMBOLS_LOAD_FACTOR);
+    return desired_count > grow_threshold;
 }
 
 /* == Garbage collector API == */
@@ -350,6 +533,29 @@ void dGC_init(struct dy_gc* gc, struct dysl_allocator allocator) {
     gc->allocator = allocator;
     dObj_close(&gc->root);
     dObj_close(&gc->gen);
+}
+
+static inline void dGC_track(struct dy_gc* gc, struct dy_object* obj) {
+    dObj_link(obj, &gc->gen);
+}
+
+static inline void dGC_root(struct dy_gc* gc, struct dy_object* obj) {
+    dObj_link(obj, &gc->root);
+}
+
+static inline void dGC_unroot(struct dy_gc* gc, struct dy_object* obj) {
+    dObj_unlink(obj);
+}
+
+struct dy_object* dGC_create(struct dy_gc* gc, size_t size, dy_tag tag) {
+    struct dy_object* obj = (struct dy_object*)dAlloc_alloc(dGC_allocator(gc),
+                                                            size);
+    if (obj == NULL)
+        return NULL;
+    obj->tag = tag;
+    // dObj_close(obj); // unnecessary
+    dGC_track(gc, obj);
+    return obj;
 }
 
 /* == Global state API == */
@@ -398,6 +604,7 @@ void* dysl_stdlib_allocator_fn(void* _ud, void* ptr, size_t _os, size_t ns) {
     // invalid case
     return NULL;
 }
+
 struct dysl_allocator dysl_standard_allocator() {
     return ((struct dysl_allocator){
         .user_data = NULL,
