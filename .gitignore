@@ -1,0 +1,14 @@
+# generic binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+
+# mac crap
+.DS_Store
+
+# non-windows binary
+/dysl
+
