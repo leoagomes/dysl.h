@@ -37,11 +37,16 @@ Adding Dysl to your C/C++ app is as simple as:
 
 Read the [doc on embedding](./docs/embedding.md), it's super short.
 
-### Hello, world
+## Basics
 
+Put short, dysl is a stack-based, concatenative language on top of dynamic bindings.
+Operands are pushed to a stack and words operate on it, words are resolved through a
+dynamic environment stack.
+
+```dysl
+"Hello, world!" io:print
 ```
-"hello, world" print
-```
+
 
 ## Documentation
 
