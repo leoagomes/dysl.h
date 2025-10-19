@@ -136,7 +136,7 @@ void* dysl_stdlib_allocator_fn(void* ud, void* ptr, size_t os, size_t ns);
  *
  * @return  A `dysl_allocator` using the standard library functions.
  */
-struct dysl_allocator dysl_standard_allocator();
+struct dysl_allocator dysl_standard_allocator(void);
 #endif /* DYSL_STDLIB */
 
 /* == Dysl API == */
@@ -235,9 +235,16 @@ struct dy_symbols {
     size_t count, capacity;
 };
 /** Initializes the symbol table. */
-void dSymbols_init(struct dy_symbols* symbols, size_t initial_capacity, struct dysl_allocator* allocator);
+void dSymbols_init(
+    struct dy_symbols* symbols,
+    size_t initial_capacity,
+    struct dysl_allocator* allocator
+);
 /** Destroys the symbol table structure, not the symbols themselves. */
-void dSymbols_destroy(struct dy_symbols* symbols, struct dysl_allocator* allocator);
+void dSymbols_destroy(
+    struct dy_symbols* symbols,
+    struct dysl_allocator* allocator
+);
 /** Looks up a symbol in the table, returns its slot. */
 struct dy_symbol** dSymbols_lookup(
     struct dy_symbols* symbols,
@@ -339,6 +346,7 @@ static inline dy_hash_t dHash_fnv1a(const void* key, size_t length) {
     }
     return hash;
 }
+#define dHash_slice(key, length) dHash_fnv1a((key), (length))
 
 /** Compares two memory slices for equality */
 static inline int dSlice_equals(
@@ -511,7 +519,8 @@ void dSymbols_ensure_capacity(
         while (new_capacity * DYSL_SYMBOLS_LOAD_FACTOR < desired_count) {
             new_capacity *= 2;
         }
-    } else if (desired_count < shrink_threshold && capacity > DYSL_SYMBOLS_INITIAL_CAPACITY) {
+    } else if (desired_count < shrink_threshold &&
+               capacity > DYSL_SYMBOLS_INITIAL_CAPACITY) {
         // need to shrink
         new_capacity = capacity / 2;
         new_capacity = dU_max(new_capacity, DYSL_SYMBOLS_INITIAL_CAPACITY);
@@ -605,7 +614,7 @@ void* dysl_stdlib_allocator_fn(void* _ud, void* ptr, size_t _os, size_t ns) {
     return NULL;
 }
 
-struct dysl_allocator dysl_standard_allocator() {
+struct dysl_allocator dysl_standard_allocator(void) {
     return ((struct dysl_allocator){
         .user_data = NULL,
         .fn = dysl_stdlib_allocator_fn
@@ -619,7 +628,7 @@ struct dysl_allocator dysl_standard_allocator() {
 #include <string.h>
 
 void usage(const char* program_name);
-void version();
+void version(void);
 
 int main(int argc, const char* argv[]) {
     const char* program_name = argv[0];
@@ -671,7 +680,7 @@ void usage(const char* program_name) {
     printf("  -v, --version   Show version information and exit\n");
 }
 
-void version() {
+void version(void) {
     printf("dysl version %s\n", DYSL_VERSION_STRING);
 }
 #endif /* DYSL_CLI */
