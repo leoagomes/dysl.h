@@ -10,7 +10,7 @@ def guess-game do
 
   math:random 100 * math:floor -> let number
 
-  forever do
+  loop do
     "Guess a number between 0 and 100: " io:print
     io:readline serde:string->integer -> let guess
     guess number > if {
@@ -24,3 +24,61 @@ def guess-game do
     io:println
   end
 end
+
+hello-world
+guess-game
+
+# definitions
+def word do block end
+value -> let var
+reassign-value -> var
+
+# conditionals
+cond? if { ... }
+      else other-cond? if { ... }
+      else { ... }
+
+# loops
+loop { ... }
+loop cond? while { ... }
+count times { ... }
+_start _end for { ... }
+_start _end _increment for+ { ... }
+# you can skip this iteration with
+continue
+# and break from the loop with
+break
+
+# modules
+import module-name
+
+# blocks
+# you can pass a block to a word
+word-that-takes-block do ... end
+# you can invoke the block from a word with yield
+def word-that-takes-block do
+  block-given? if { yield }
+end
+
+# procs
+proc { ... } -> let proc-name
+&{ ... } -> let short-proc-name
+proc-name .call
+# you can turn a proc into a block
+word-that-takes-block &proc-name
+
+# types
+# strings
+"Hello, string"
+# symbols
+:my-symbol
+# arrays
+array { 1 2 3 }
+# tables
+table { :key "value" }
+# numbers
+123 1.23 0x1AF 0b101010 0o777
+# booleans
+true false
+# nil
+nil
