@@ -1,0 +1,23 @@
+def hello-world do
+  import io
+  "Hello, world!" io:println
+end
+
+def guess-game do
+  import io
+  import math
+  import serde
+
+  math:random 100 * math:floor -> let number
+
+  forever do
+    "Guess a number between 0 and 100: " io:print
+    io:readline serde:string->integer -> let guess
+    guess number =?
+      if {
+        "That's correct!" io:println
+        break
+      }
+    "Sorry, that's not it. Try again."
+  end
+end

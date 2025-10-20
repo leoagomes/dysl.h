@@ -176,6 +176,24 @@ struct dy_object;
 struct dy_symbol;
 struct dy_string;
 
+#define DYSL_TAG_TYPE_MASK ((dy_tag)0xFF)
+#define DYSL_TAG_FLAGS_MASK (~(dy_tag)DYSL_TAG_TYPE_MASK)
+#define DYSL_TAG_FLAGS_SHIFT 8
+#define DYSL_TAG_OBJECT     ((dy_tag)(0x01 << DYSL_TAG_FLAGS_SHIFT))
+#define DYSL_TAG_SPECIAL    ((dy_tag)(0x02 << DYSL_TAG_FLAGS_SHIFT))
+
+enum dy_type {
+    DYSL_TYPE_NIL = 0,
+    DYSL_TYPE_INTEGER,
+    DYSL_TYPE_REAL,
+    DYSL_TYPE_BOOLEAN,
+    DYSL_TYPE_CHARACTER,
+    DYSL_TYPE_STRING,
+    DYSL_TYPE_SYMBOL,
+    // meta
+    DYSL_TYPE_COUNT,
+};
+
 // tagged union value
 typedef uint32_t dy_tag;
 struct dy_value {
@@ -190,6 +208,8 @@ struct dy_value {
     } as;
 };
 
+struct dy_gc;
+
 // object type definitions
 struct dy_object {
     dy_tag tag;
@@ -199,7 +219,7 @@ static inline void dObj_close(struct dy_object* obj);
 static inline void dObj_unlink(struct dy_object* obj);
 static inline void dObj_link(struct dy_object* obj, struct dy_object* list);
 
-// symbols
+#pragma region Symbol type API
 struct dy_symbol {
     struct dy_object header;
     struct dy_symbol* next_in_table;
@@ -207,6 +227,13 @@ struct dy_symbol {
     dy_hash_t hash;
     char name[1];
 };
+struct dy_symbol* dSymbol_create(
+    struct dy_gc* gc,
+    const char* name,
+    size_t length,
+    dy_hash_t hash
+);
+#pragma endregion /* Symbol type API */
 
 // strings
 struct dy_string {
@@ -215,7 +242,7 @@ struct dy_string {
     char data[1];
 };
 
-// garbage collector
+#pragma region Garbage Collector API
 struct dy_gc {
     struct dysl_allocator allocator;
     struct dy_object root, gen;
@@ -226,8 +253,9 @@ static inline void dGC_track(struct dy_gc* gc, struct dy_object* obj);
 static inline void dGC_root(struct dy_gc* gc, struct dy_object* obj);
 static inline void dGC_unroot(struct dy_gc* gc, struct dy_object* obj);
 struct dy_object* dGC_create(struct dy_gc* gc, size_t size, dy_tag tag);
+#pragma endregion /* Garbage Collector API */
 
-// symbol table
+#pragma region Symbol table API
 #define DYSL_SYMBOLS_INITIAL_CAPACITY 64
 #define DYSL_SYMBOLS_LOAD_FACTOR 0.75
 struct dy_symbols {
@@ -284,6 +312,7 @@ void dSymbols_resize(
 /** Returns whether the symbol table should grow to accommodate the desired
  * count of symbols. */
 int dSymbols_should_grow(struct dy_symbols* symbols, size_t desired_count);
+#pragma endregion /* Symbol table API */
 
 // global state
 struct dy_global {
@@ -366,6 +395,8 @@ static inline int dSlice_equals(
 }
 #pragma endregion /* Utility functions and macros */
 
+/* == Implementation == */
+
 #pragma region Allocator API implementation
 static inline void* dAlloc_alloc(struct dysl_allocator* allocator, size_t size) {
     return allocator->fn(allocator->user_data, NULL, 0, size);
@@ -401,6 +432,29 @@ static inline void dObj_link(struct dy_object* obj, struct dy_object* list) {
     list->next = obj;
 }
 #pragma endregion /* Object linked list API implementation */
+
+#pragma region Symbol type API implementation
+struct dy_symbol* dSymbol_create(
+    struct dy_gc* gc,
+    const char* name,
+    size_t length,
+    dy_hash_t hash
+) {
+    size_t total_size = sizeof(struct dy_symbol) + length;
+    struct dy_symbol* sym = (struct dy_symbol*)dGC_create(
+        gc,
+        total_size,
+        DYSL_TYPE_SYMBOL
+    );
+    if (sym == NULL)
+        return NULL;
+    sym->length = length;
+    sym->hash = hash;
+    dMem_copy(sym->name, name, length);
+    sym->name[length] = '\0'; // null-terminate
+    return sym;
+}
+#pragma endregion /* Symbol type API implementation */
 
 #pragma region Symbol table API implementation
 void dSymbols_init(
@@ -542,8 +596,11 @@ int dSymbols_should_grow(struct dy_symbols* symbols, size_t desired_count) {
 #pragma region Garbage Collector API implementation
 void dGC_init(struct dy_gc* gc, struct dysl_allocator allocator) {
     gc->allocator = allocator;
+    dy_tag tag = DYSL_TAG_OBJECT | DYSL_TAG_SPECIAL | DYSL_TYPE_NIL;
     dObj_close(&gc->root);
+    gc->root.tag = tag;
     dObj_close(&gc->gen);
+    gc->gen.tag = tag;
 }
 
 static inline void dGC_track(struct dy_gc* gc, struct dy_object* obj) {
@@ -556,6 +613,7 @@ static inline void dGC_root(struct dy_gc* gc, struct dy_object* obj) {
 
 static inline void dGC_unroot(struct dy_gc* gc, struct dy_object* obj) {
     dObj_unlink(obj);
+    dGC_track(gc, obj);
 }
 
 struct dy_object* dGC_create(struct dy_gc* gc, size_t size, dy_tag tag) {
@@ -563,7 +621,7 @@ struct dy_object* dGC_create(struct dy_gc* gc, size_t size, dy_tag tag) {
                                                             size);
     if (obj == NULL)
         return NULL;
-    obj->tag = tag;
+    obj->tag = tag | DYSL_TAG_OBJECT;
     // dObj_close(obj); // unnecessary
     dGC_track(gc, obj);
     return obj;
@@ -577,7 +635,7 @@ void dGlobal_init(struct dy_global* global, struct dysl_allocator allocator) {
 }
 #pragma endregion /* Global context API implementation */
 
-#pragma region Public Dysl API implementation
+#pragma region Public dysl API implementation
 struct dysl* dysl_new(struct dysl_allocator allocator) {
     struct dysl* D = (struct dysl*)dAlloc_alloc(&allocator, sizeof(*D));
     if (D == NULL)
