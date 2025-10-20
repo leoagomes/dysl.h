@@ -210,7 +210,7 @@ struct dy_value {
 
 struct dy_gc;
 
-// object type definitions
+#pragma region Object (header) linked list API
 struct dy_object {
     dy_tag tag;
     struct dy_object *previous, *next;
@@ -218,6 +218,7 @@ struct dy_object {
 static inline void dObj_close(struct dy_object* obj);
 static inline void dObj_unlink(struct dy_object* obj);
 static inline void dObj_link(struct dy_object* obj, struct dy_object* list);
+#pragma endregion /* Object (header) linked list API */
 
 #pragma region Symbol type API
 struct dy_symbol {
@@ -235,12 +236,18 @@ struct dy_symbol* dSymbol_create(
 );
 #pragma endregion /* Symbol type API */
 
-// strings
+#pragma region String type API
 struct dy_string {
     struct dy_object header;
     size_t length;
     char data[1];
 };
+struct dy_string* dString_create(
+    struct dy_gc* gc,
+    const char* data,
+    size_t length
+);
+#pragma endregion /* String type API */
 
 #pragma region Garbage Collector API
 struct dy_gc {
@@ -335,7 +342,7 @@ struct dysl {
 };
 #define dS_gc(state) dGlobal_gc((state)->global)
 
-/* == Allocator API == */
+#pragma region Allocator API
 static inline void* dAlloc_alloc(struct dysl_allocator* allocator, size_t size);
 static inline void* dAlloc_free(struct dysl_allocator* allocator, void* ptr);
 static inline void* dAlloc_realloc(
@@ -344,6 +351,7 @@ static inline void* dAlloc_realloc(
     size_t old_size,
     size_t new_size
 );
+#pragma endregion /* Allocator API */
 
 #pragma region Utility functions and macros
 #define dU_min(a, b) ((a) < (b) ? (a) : (b))
@@ -414,7 +422,7 @@ static inline void* dAlloc_realloc(
 }
 #pragma endregion /* Allocator API implementation */
 
-#pragma region Object linked list API implementation
+#pragma region Object (header) linked list API implementation
 static inline void dObj_close(struct dy_object* obj) {
     obj->previous = obj->next = obj;
 }
@@ -431,7 +439,7 @@ static inline void dObj_link(struct dy_object* obj, struct dy_object* list) {
     list->next->previous = obj;
     list->next = obj;
 }
-#pragma endregion /* Object linked list API implementation */
+#pragma endregion /* Object (header) linked list API implementation */
 
 #pragma region Symbol type API implementation
 struct dy_symbol* dSymbol_create(
@@ -455,6 +463,26 @@ struct dy_symbol* dSymbol_create(
     return sym;
 }
 #pragma endregion /* Symbol type API implementation */
+
+#pragma region String type API implementation
+struct dy_string* dString_create(
+    struct dy_gc* gc,
+    const char* data,
+    size_t length
+) {
+    struct dy_string* str = (struct dy_string*)dGC_create(
+        gc,
+        sizeof(struct dy_string) + length + 1,
+        DYSL_TYPE_STRING
+    );
+    if (str == NULL)
+        return NULL;
+    str->length = length;
+    dMem_copy(str->data, data, length);
+    str->data[length] = '\0'; // null-terminate
+    return str;
+}
+#pragma endregion /* String type API implementation */
 
 #pragma region Symbol table API implementation
 void dSymbols_init(
