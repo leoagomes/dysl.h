@@ -190,6 +190,9 @@ enum dy_type {
     DYSL_TYPE_CHARACTER,
     DYSL_TYPE_STRING,
     DYSL_TYPE_SYMBOL,
+    DYSL_TYPE_ARRAY,
+    DYSL_TYPE_TABLE,
+    DYSL_TYPE_PROCEDURE,
     // meta
     DYSL_TYPE_COUNT,
 };
@@ -321,7 +324,7 @@ void dSymbols_resize(
 int dSymbols_should_grow(struct dy_symbols* symbols, size_t desired_count);
 #pragma endregion /* Symbol table API */
 
-// global state
+#pragma region Global context API
 struct dy_global {
     struct dy_gc gc;
     struct dy_symbols symbols;
@@ -329,18 +332,22 @@ struct dy_global {
 };
 #define dGlobal_gc(global) (&((global)->gc))
 void dGlobal_init(struct dy_global* global, struct dysl_allocator allocator);
+#pragma endregion /* Global context API */
 
+#pragma region Value Stack API
 struct dy_stack {
     struct dy_value* base;
     struct dy_value* top;
     size_t size;
 };
+#pragma endregion /* Value Stack API */
 
-// interpreter context/state
+#pragma region Interpreter state API
 struct dysl {
     struct dy_global* global;
 };
 #define dS_gc(state) dGlobal_gc((state)->global)
+#pragma endregion /* Interpreter state API */
 
 #pragma region Allocator API
 static inline void* dAlloc_alloc(struct dysl_allocator* allocator, size_t size);
