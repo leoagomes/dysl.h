@@ -13,11 +13,14 @@ def guess-game do
   forever do
     "Guess a number between 0 and 100: " io:print
     io:readline serde:string->integer -> let guess
-    guess number =?
-      if {
-        "That's correct!" io:println
-        break
-      }
-    "Sorry, that's not it. Try again."
+    guess number > if {
+      "Lower!"
+    } else guess number < if {
+      "Higher!"
+    } else {
+      "That's correct!" io:println
+      break
+    }
+    io:println
   end
 end
