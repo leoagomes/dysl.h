@@ -144,6 +144,11 @@ struct dysl_allocator dysl_standard_allocator(void);
 /** The interpreter context. */
 struct dysl;
 
+/** A native procedure (function) type.
+ * @param dysl  The interpreter context.
+ */
+typedef void(*dysl_native_proc)(struct dysl*);
+
 /** Creates a new interpreter context.
  *
  * The returned context should be destroyed with `dysl_destroy()` when no
